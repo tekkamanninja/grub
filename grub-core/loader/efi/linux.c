@@ -54,6 +54,17 @@ static int initrd_use_loadfile2;
 static grub_efi_guid_t load_file2_guid = GRUB_EFI_LOAD_FILE2_PROTOCOL_GUID;
 static grub_efi_guid_t device_path_guid = GRUB_EFI_DEVICE_PATH_GUID;
 
+#ifndef get_hartid
+#define grub_fdt_set_hartid(__fdt, __node)
+#else
+static int hartid = 0;
+#define grub_fdt_set_hartid(__fdt, __node) \
+({ \
+  get_hartid(hartid); \
+  grub_fdt_set_prop32 (__fdt, __node, "boot-hartid", hartid); \
+})
+#endif
+
 grub_err_t
 grub_arch_efi_linux_check_image (struct linux_arch_kernel_header * lh)
 {
@@ -95,21 +106,21 @@ finalize_params_linux (void)
 
   void *fdt;
 
+  fdt = grub_fdt_load (GRUB_EFI_LINUX_FDT_EXTRA_SPACE);
+
+  if (!fdt)
+    goto failure;
+
+  node = grub_fdt_find_subnode (fdt, 0, "chosen");
+  if (node < 0)
+    node = grub_fdt_add_subnode (fdt, 0, "chosen");
+
+  if (node < 1)
+    goto failure;
+
   /* Set initrd info */
   if (initrd_start && initrd_end > initrd_start)
     {
-      fdt = grub_fdt_load (GRUB_EFI_LINUX_FDT_EXTRA_SPACE);
-
-      if (!fdt)
-	goto failure;
-
-      node = grub_fdt_find_subnode (fdt, 0, "chosen");
-      if (node < 0)
-	node = grub_fdt_add_subnode (fdt, 0, "chosen");
-
-      if (node < 1)
-	goto failure;
-
       grub_dprintf ("linux", "Initrd @ %p-%p\n",
 		    (void *) initrd_start, (void *) initrd_end);
 
@@ -122,6 +133,8 @@ finalize_params_linux (void)
       if (retval)
 	goto failure;
     }
+
+  grub_fdt_set_hartid(fdt, node);
 
   if (grub_fdt_install() != GRUB_ERR_NONE)
     goto failure;
